@@ -5,6 +5,7 @@ from django.db import models
 from django.conf import settings
 from django.core.files.uploadedfile import UploadedFile
 from django.utils import timezone
+from google.cloud import storage
 
 from .settings import EXPIRATION_DELTA, UPLOAD_TO, STORAGE, DEFAULT_MODEL_USER_FIELD_NULL, DEFAULT_MODEL_USER_FIELD_BLANK
 from .constants import CHUNKED_UPLOAD_CHOICES, UPLOADING
@@ -16,8 +17,9 @@ def generate_upload_id():
 def upload_remote_path(instance, filename):
     parent_folder = "chunked_uploads"
     today = timezone.localtime(timezone.now()).date()
+    upload_id = instance.upload_id
     filename = instance.filename
-    return f"{parent_folder}/{today}/{filename}"
+    return f"{parent_folder}/{today}/{upload_id}/{filename}"
 
 class AbstractChunkedUpload(models.Model):
     """
@@ -66,11 +68,11 @@ class AbstractChunkedUpload(models.Model):
         return u'<%s - upload_id: %s - bytes: %s - status: %s>' % (
             self.filename, self.upload_id, self.offset, self.status)
 
-    def append_chunk(self, chunk, chunk_size=None, save=True):
-        self.file.close()
-        with open(self.file.path, mode='ab') as file_obj:  # mode = append+binary
-            file_obj.write(chunk.read())  # We can use .read() safely because chunk is already in memory
-
+    def append_chunk(self, chunk, chunk_size=None,chunk_number=0, save=True,attrs= None):
+        today = attrs['today']
+        bucket = attrs['bucket']
+        blob = bucket.blob(f"chunked_uploads/{today}/{self.upload_id}/{self.filename}{chunk_number}")
+        blob.upload_from_file(chunk, content_type=chunk.content_type,rewind=True)
         if chunk_size is not None:
             self.offset += chunk_size
         elif hasattr(chunk, 'size'):
