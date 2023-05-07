@@ -8,11 +8,10 @@ class http_status:
     HTTP_410_GONE = 410
 
 
-
 UPLOADING = 1
 COMPLETE = 2
 
 CHUNKED_UPLOAD_CHOICES = (
-    (UPLOADING, _('Uploading')),
-    (COMPLETE, _('Complete')),
+    (UPLOADING, _("Uploading")),
+    (COMPLETE, _("Complete")),
 )

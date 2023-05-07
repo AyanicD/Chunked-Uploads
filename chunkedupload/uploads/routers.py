@@ -2,6 +2,7 @@ from rest_framework import routers
 
 from uploads.views import ChunkedUploadApiViewSet
 
+
 class BaseRouter(routers.SimpleRouter):
     """Base Router class to be inherited by all Router classes."""
 
@@ -11,9 +12,4 @@ class BaseRouter(routers.SimpleRouter):
 
 
 CommonRouter = BaseRouter()
-CommonRouter.register(
-    "api",
-    ChunkedUploadApiViewSet,
-    basename="chunk"
-)
-
+CommonRouter.register("api", ChunkedUploadApiViewSet, basename="chunk")

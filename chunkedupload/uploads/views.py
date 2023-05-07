@@ -26,12 +26,11 @@ from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import InMemoryUploadedFile
 from google.cloud import storage
 
+
 def is_authenticated(user):
     if callable(user.is_authenticated):
         return user.is_authenticated()  # Django <2.0
     return user.is_authenticated  # Django >=2.0
-
-
 
 
 class ChunkedUploadBaseView(View):
@@ -40,11 +39,8 @@ class ChunkedUploadBaseView(View):
     """
 
     # Has to be a ChunkedUpload subclass
-    today = timezone.localtime(timezone.now()).date()
-    client = storage.Client()
-    bucket = client.get_bucket('cos-dev-filestore')
     model = ChunkedUpload
-    user_field_name = 'user'  # the field name that point towards the AUTH_USER in ChunkedUpload class or its subclasses
+    user_field_name = "user"  # the field name that point towards the AUTH_USER in ChunkedUpload class or its subclasses
 
     def get_queryset(self, request):
         """
@@ -52,7 +48,7 @@ class ChunkedUploadBaseView(View):
         By default, users can only continue uploading their own uploads.
         """
         queryset = self.model.objects.all()
-        if hasattr(request, 'user') and is_authenticated(request.user):
+        if hasattr(request, "user") and is_authenticated(request.user):
             queryset = queryset.filter(**{self.user_field_name: request.user})
         return queryset
 
@@ -101,10 +97,10 @@ class ChunkedUploadBaseView(View):
         """
         Grants permission to start/continue an upload based on the request.
         """
-        if hasattr(request, 'user') and not is_authenticated(request.user):
+        if hasattr(request, "user") and not is_authenticated(request.user):
             raise ChunkedUploadError(
                 status=http_status.HTTP_403_FORBIDDEN,
-                detail='Authentication credentials were not provided'
+                detail="Authentication credentials were not provided",
             )
 
     def _post(self, request, *args, **kwargs):
@@ -127,10 +123,10 @@ class ChunkedUploadView(ChunkedUploadBaseView):
     if the upload is interrupted.
     """
 
-    field_name = 'file'
-    content_range_header = 'HTTP_CONTENT_RANGE'
+    field_name = "file"
+    content_range_header = "HTTP_CONTENT_RANGE"
     content_range_pattern = re.compile(
-        r'^bytes (?P<start>\d+)-(?P<end>\d+)/(?P<total>\d+)$'
+        r"^bytes (?P<start>\d+)-(?P<end>\d+)/(?P<total>\d+)$"
     )
     max_bytes = MAX_BYTES  # Max amount of data that can be uploaded
     # If `fail_if_no_header` is True, an exception will be raised if the
@@ -162,7 +158,7 @@ class ChunkedUploadView(ChunkedUploadBaseView):
         """
         chunked_upload = self.model(**attrs)
         # file starts empty
-        chunked_upload.file.save(name='', content=ContentFile(''), save=save)
+        chunked_upload.file.save(name="", content=ContentFile(""), save=save)
         return chunked_upload
 
     def is_valid_chunked_upload(self, chunked_upload):
@@ -170,46 +166,50 @@ class ChunkedUploadView(ChunkedUploadBaseView):
         Check if chunked upload has already expired or is already complete.
         """
         if chunked_upload.expired:
-            raise ChunkedUploadError(status=http_status.HTTP_410_GONE,
-                                     detail='Upload has expired')
+            raise ChunkedUploadError(
+                status=http_status.HTTP_410_GONE, detail="Upload has expired"
+            )
         error_msg = 'Upload has already been marked as "%s"'
         if chunked_upload.status == COMPLETE:
-            raise ChunkedUploadError(status=http_status.HTTP_400_BAD_REQUEST,
-                                     detail=error_msg % 'complete')
+            raise ChunkedUploadError(
+                status=http_status.HTTP_400_BAD_REQUEST, detail=error_msg % "complete"
+            )
 
     def get_response_data(self, chunked_upload, request):
         """
         Data for the response. Should return a dictionary-like object.
         """
         return {
-            'upload_id': chunked_upload.upload_id,
-            'offset': chunked_upload.offset,
-            'expires': chunked_upload.expires_on
+            "upload_id": chunked_upload.upload_id,
+            "offset": chunked_upload.offset,
+            "expires": chunked_upload.expires_on,
         }
 
     def _post(self, request, *args, **kwargs):
         print(request)
-        chunk = request.data['file']
+        chunk = request.data["file"]
         if chunk is None:
-            raise ChunkedUploadError(status=http_status.HTTP_400_BAD_REQUEST,
-                                     detail='No chunk file was submitted')
+            raise ChunkedUploadError(
+                status=http_status.HTTP_400_BAD_REQUEST,
+                detail="No chunk file was submitted",
+            )
         self.validate(request)
 
-        upload_id = request.data['upload_id']
-        if request.data['chunk_number']:
-            chunk_number = request.data['chunk_number'] 
+        upload_id = request.data["upload_id"]
+        chunk_num = request.data['chunk_num']
         if upload_id:
-            chunked_upload = get_object_or_404(self.get_queryset(request),
-                                               upload_id=upload_id)
+            chunked_upload = get_object_or_404(
+                self.get_queryset(request), upload_id=upload_id
+            )
             self.is_valid_chunked_upload(chunked_upload)
         else:
-            attrs = {'filename': chunk.name}
-            if hasattr(request, 'user') and is_authenticated(request.user):
-                attrs['user'] = request.user
+            attrs = {"filename": chunk.name}
+            if hasattr(request, "user") and is_authenticated(request.user):
+                attrs["user"] = request.user
             attrs.update(self.get_extra_attrs(request))
             chunked_upload = self.create_chunked_upload(save=False, **attrs)
 
-        content_range = request.META.get(self.content_range_header, '')
+        content_range = request.META.get(self.content_range_header, "")
         match = self.content_range_pattern.match(content_range)
         print(chunk.size)
         comments = """if offset:
@@ -224,10 +224,8 @@ class ChunkedUploadView(ChunkedUploadBaseView):
             start = 0
             end = chunk.size - 1
             total = chunk.size
-
         chunk_size = end - start + 1
         max_bytes = self.get_max_bytes(request)
-
         if max_bytes is not None and total > max_bytes:
             raise ChunkedUploadError(
                 status=http_status.HTTP_400_BAD_REQUEST,
@@ -243,111 +241,211 @@ class ChunkedUploadView(ChunkedUploadBaseView):
             raise ChunkedUploadError(status=http_status.HTTP_400_BAD_REQUEST,
                                      detail="File size doesn't match headers")
         """
-        attrs = {}
-        attrs['today'] = self.today
-        attrs['bucket'] = self.bucket
-        chunked_upload.append_chunk(chunk, chunk_size=chunk.size, chunk_number=chunk_number,save=False,attrs=attrs)
+        chunked_upload.append_chunk(chunk, chunk_size=chunk.size, save=False,chunk_num = chunk_num)
 
         self._save(chunked_upload)
 
-        return Response(self.get_response_data(chunked_upload, request),
-                        status=http_status.HTTP_200_OK)
-
-
-class ChunkedUploadCompleteView(ChunkedUploadBaseView):
-    """
-    Completes an chunked upload. Method `on_completion` is a placeholder to
-    define what to do when upload is complete.
-    """
-
-    # I wouldn't recommend to turn off the md5 check, unless is really
-    # impacting your performance. Proceed at your own risk.
-    do_md5_check = False
-
-    def on_completion(self, uploaded_file, request):
-        """
-        Placeholder method to define what to do when upload is complete.
-        """
-
-    def is_valid_chunked_upload(self, chunked_upload):
-        """
-        Check if chunked upload is already complete.
-        """
-        if chunked_upload.status == COMPLETE:
-            error_msg = "Upload has already been marked as complete"
-            return ChunkedUploadError(status=http_status.HTTP_400_BAD_REQUEST,
-                                      detail=error_msg)
-
-    def md5_check(self, chunked_upload, md5):
-        """
-        Verify if md5 checksum sent by client matches generated md5.
-        """
-        if chunked_upload.md5 != md5:
-            raise ChunkedUploadError(status=http_status.HTTP_400_BAD_REQUEST,
-                                     detail='md5 checksum does not match')
-
-    def _post(self, request, *args, **kwargs):
-        upload_id = request.data['upload_id']
-        md5 = request.data['md5']
-
-        error_msg = None
-        if self.do_md5_check:
-            if not upload_id or not md5:
-                error_msg = "Both 'upload_id' and 'md5' are required"
-        elif not upload_id:
-            error_msg = "'upload_id' is required"
-        if error_msg:
-            raise ChunkedUploadError(status=http_status.HTTP_400_BAD_REQUEST,
-                                     detail=error_msg)
-
-        chunked_upload = get_object_or_404(self.get_queryset(request),
-                                           upload_id=upload_id)
-
-        self.validate(request)
-        self.is_valid_chunked_upload(chunked_upload)
-        if self.do_md5_check:
-            self.md5_check(chunked_upload, md5)
-
-        chunked_upload.status = COMPLETE
-        chunked_upload.completed_on = timezone.now()
-        self._save(chunked_upload)
-        self.on_completion(chunked_upload.get_uploaded_file(), request)
-
-        return Response(self.get_response_data(chunked_upload, request),
-                        status=http_status.HTTP_200_OK)
-
-class MyChunkedUploadView(ChunkedUploadView):
-
-    model = MyChunkedUpload
-    field_name = 'the_file'
-
-    def check_permissions(self, request):
-        # Allow non authenticated users to make uploads
-        pass
+        return Response(
+            self.get_response_data(chunked_upload, request),
+            status=http_status.HTTP_200_OK,
+        )
 
 class ChunkedUploadApiViewSet(viewsets.ModelViewSet):
-
+    #http_method_names = ['POST','PATCH']
+    today = timezone.localtime(timezone.now()).date()
+    client = storage.Client()
+    #bucket = client.get_bucket("cos-dev-filestore")
     queryset = MyChunkedUpload.objects.all()
     model = MyChunkedUpload
     serializer_class = ChunkedUploadSerializer
+
     def get_response_data(self, chunked_upload):
         """
         Data for the response. Should return a dictionary-like object.
         """
         return {
-            'upload_id': chunked_upload.upload_id,
-            'offset': chunked_upload.offset,
-            'expires': chunked_upload.expires_on
+            "upload_id": chunked_upload.upload_id,
+            "offset": chunked_upload.offset,
+            "expires": chunked_upload.expires_on,
         }
-    def md5(self,file):
-        CHUNK_SIZE = 10485760
+
+    def md5(self, file):
+        CHUNK_SIZE = 262144
         md5 = hashlib.md5()
         for chunk in file.chunks(CHUNK_SIZE):
             md5.update(chunk)
         md5 = md5.hexdigest()
         return md5
+
     def create(self, request, pk=None):
-        print(os.environ["GOOGLE_APPLICATION_CREDENTIALS"])
+        filename = request.data["filename"] 
+        chunk_num = request.data["chunk_num"]
+        chunk = request.data["chunk"]
+        file_md5 = request.data['file_md5'] 
+        chunk_md5 = request.data['chunk_md5']
+        #file_size = request.data["size"]
+        if(chunk_md5 != self.md5(chunk)):
+            return Response({"message" :"File Corrupt","status" :409})
+
+        if self.queryset.filter(file_md5=file_md5).exists():
+            fetch = 1
+            resume_upload = self.queryset.get(file_md5=file_md5)
+            resume_serializer = ChunkedUploadSerializer(resume_upload)
+            upload_id = resume_serializer.data["upload_id"]
+            offset = resume_serializer.data["offset"]
+            print(resume_serializer.data)
+            cuv = ChunkedUploadView()
+            cuv.request = request
+            request.data['upload_id'] = upload_id
+            request.data['file'] = chunk.open()
+            request.data['chunk_num'] = chunk_num
+            x = cuv._post(request)
+            print(x)
+        else:
+            request.data["file_md5"] = file_md5
+            request.data["file"] = chunk
+            serializer = ChunkedUploadSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            print(request)
+            upload_id = serializer.data["upload_id"]
+            print(serializer.data["offset"])
+            print(upload_id)    
+        return Response({"chunk_num" : chunk_num, "status": "success"})
+    
+
+    @action(methods=["PATCH"], detail=False)
+    def combine_chunks(self, request):
+        filename = request.data["filename"] 
+        file_md5 = request.data['file_md5'] 
+        file_size = int(request.data["size"])
+        CHUNK_SIZE = 262144
+        if file_size%CHUNK_SIZE == 0:
+            ciel = file_size/CHUNK_SIZE
+        else:
+            ciel = int(file_size/CHUNK_SIZE) + 1
+        if self.queryset.filter(file_md5=file_md5).exists():
+            fetch = 1
+            resume_upload = self.queryset.get(file_md5=file_md5)
+            resume_serializer = ChunkedUploadSerializer(resume_upload)
+            upload_id = resume_serializer.data["upload_id"]
+            offset = resume_serializer.data["offset"]
+            print(resume_serializer.data['file'])
+            path = f'./chunked_uploads/{upload_id}/{filename}'
+            for i in range(2, ciel + 1):
+                if os.path.isfile(path+str(i)) == False:
+                    return Response({"message" : f"Chunk Number : {i} not arrived", "status": "failure"})
+
+            with open(path, "ab") as file_obj:  # mode = append+binary
+                for i in range(2,ciel + 1):
+                    with open(path+str(i),'rb') as chunk:
+                        file_obj.write(
+                            chunk.read()
+                        )
+                    os.remove(path+str(i))
+                
+        else:
+            return Response({"message" : "wrong md5", "status": "failure"})
+        # GCS
+        """blob = self.bucket.blob(f"chunked_uploads/{self.today}/{upload_id}/{filename}")
+        file = open(resume_serializer.data['file'],'rb')
+        blob.upload_from_file(file, content_type=file.content_type, rewind=True)
+        print(blob)"""   
+        return Response({"url" : "gg", "status": "success"})
+        create = """file = request.data["file"]
+        filename = request.data["file"].name
+        request.data["filename"] = filename
+        content_type = file.content_type
+        print(type(file))
+        md5 = self.md5(file)
+        fetch = 0
+        offset = 0
+        if self.queryset.filter(file_md5=md5).exists():
+            fetch = 1
+            resume_upload = self.queryset.get(file_md5=md5)
+            resume_serializer = ChunkedUploadSerializer(resume_upload)
+            upload_id = resume_serializer.data["upload_id"]
+            offset = resume_serializer.data["offset"]
+            print(resume_serializer.data)
+
+        CHUNK_SIZE = 262144
+        chunk_number = 1
+        cuv = ChunkedUploadView()
+
+        for chunk in file.chunks(CHUNK_SIZE):
+            print(type(chunk))
+            content = ContentFile(chunk)
+            chunk = InMemoryUploadedFile(
+                content, None, filename, content_type, len(chunk), None
+            )
+            if fetch == 0 and chunk_number == 1:
+                request.data["file_md5"] = md5
+                request.data["file"] = chunk
+                serializer = ChunkedUploadSerializer(data=request.data)
+                serializer.is_valid(raise_exception=True)
+                serializer.save()
+                print(request)
+                upload_id = serializer.data["upload_id"]
+                print(serializer.data["offset"])
+                print(upload_id)
+            if fetch == 1 and chunk_number == 1 and offset != 0:
+                offset -= CHUNK_SIZE
+                continue
+            else:
+                cuv.request = request
+                request.data["upload_id"] = upload_id
+                request.data["file"] = chunk
+                x = cuv._post(request)
+                print(x)
+            chunk_number += 1
+
+        # GCS
+        blob = self.bucket.blob(f"chunked_uploads/{self.today}/{upload_id}/{filename}")
+        blob.upload_from_file(file, content_type=file.content_type, rewind=True)
+        print(blob)
+        
+        chunked_upload = self.queryset.get(upload_id=upload_id)
+        if md5 == chunked_upload.md5:
+            data = {"status": 2, "completed_on": timezone.now()}
+            serializer = ChunkedUploadSerializer(
+                chunked_upload, data=data, partial=True
+            )
+            if serializer.is_valid():
+                serializer.save()
+        else:
+            error_msg = "Md5 is wrong, byte transfer error"
+            return Response(error_msg, status=400)
+        return Response(serializer.data)"""
+
+    resume = """def resume(self, request):
+        file = request.data['file']
+        upload_id = request.data['upload_id']
+        cuv = MyChunkedUploadView()
+        chunked_upload = self.queryset.get(upload_id=upload_id)
+        serializer = ChunkedUploadSerializer(chunked_upload)
+        offset = serializer.data['offset']
+        CHUNK_SIZE = 262144
+        for chunk in file.chunks(CHUNK_SIZE):
+            if offset != 0:
+                offset -= CHUNK_SIZE
+                continue
+            cuv.request = request
+            request.data['file'] = chunk
+            x = cuv._post(request)
+            print(x)
+
+        chunked_upload = self.queryset.get(upload_id=upload_id)
+        if (self.md5(file) == chunked_upload.md5):
+            data = {"status" : 2,"completed_on" : timezone.now()}
+            serializer = ChunkedUploadSerializer(chunked_upload, data=data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+        else:
+            error_msg = 'Md5 is wrong, byte transfer error'
+            return Response(error_msg, status=400)
+        return Response(serializer.get_uploaded_file(chunked_upload))"""
+
+    entire_gcs = """
         file = request.data['file']
         content_type = file.content_type
         print(type(file))
@@ -396,7 +494,7 @@ class ChunkedUploadApiViewSet(viewsets.ModelViewSet):
         bucket = cuv.bucket
         outputfile = f"chunked_uploads/{today}/{upload_id}/{filename}"
         blobs = []
-        for shard in range(1,7):
+        for shard in range(1,chunk_number):
             sfile = f'chunked_uploads/{today}/{upload_id}/{filename}{shard}'
             blob = bucket.blob(sfile)
             if not blob.exists():
@@ -416,36 +514,8 @@ class ChunkedUploadApiViewSet(viewsets.ModelViewSet):
             error_msg = 'Md5 is wrong, byte transfer error'
             return Response(error_msg, status=400)
         return Response(serializer.data)
-
-    resume = """def resume(self, request):
-        file = request.data['file']
-        upload_id = request.data['upload_id']
-        cuv = MyChunkedUploadView()
-        chunked_upload = self.queryset.get(upload_id=upload_id)
-        serializer = ChunkedUploadSerializer(chunked_upload)
-        offset = serializer.data['offset']
-        CHUNK_SIZE = 10485760
-        for chunk in file.chunks(CHUNK_SIZE):
-            if offset != 0:
-                offset -= CHUNK_SIZE
-                continue
-            cuv.request = request
-            request.data['file'] = chunk
-            x = cuv._post(request)
-            print(x)
-
-        chunked_upload = self.queryset.get(upload_id=upload_id)
-        if (self.md5(file) == chunked_upload.md5):
-            data = {"status" : 2,"completed_on" : timezone.now()}
-            serializer = ChunkedUploadSerializer(chunked_upload, data=data, partial=True)
-            if serializer.is_valid():
-                serializer.save()
-        else:
-            error_msg = 'Md5 is wrong, byte transfer error'
-            return Response(error_msg, status=400)
-        return Response(serializer.get_uploaded_file(chunked_upload))"""
-    
-    combine = '''@action(methods=["POST"], detail=False)
+    """
+    combine = """@action(methods=["POST"], detail=False)
     def combine(self, request):
         today = timezone.localtime(timezone.now()).date()
         client = storage.Client()
@@ -465,5 +535,4 @@ class ChunkedUploadApiViewSet(viewsets.ModelViewSet):
         for blob in blobs:
             blob.delete()
 
-        return Response("Done")'''
-    
+        return Response("Done")"""

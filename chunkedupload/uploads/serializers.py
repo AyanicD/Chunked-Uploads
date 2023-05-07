@@ -8,12 +8,14 @@ class BaseModelSerializer(serializers.ModelSerializer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)  # noqa
 
+
 class ChunkedUploadSerializer(BaseModelSerializer):
     class Meta:
         model = MyChunkedUpload
         fields = "__all__"
-    def md5(self,obj):
+
+    def md5(self, obj):
         return obj.md5
 
-    def get_uploaded_file(self,obj):
+    def get_uploaded_file(self, obj):
         return obj.get_uploaded_file()
