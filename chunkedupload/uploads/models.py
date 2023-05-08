@@ -81,10 +81,12 @@ class AbstractChunkedUpload(models.Model):
             self.status,
         )
 
-    def append_chunk(self, chunk, chunk_size=None, save=True,chunk_num = 0):
+    def append_chunk(self, chunk, chunk_size=None, save=True, chunk_num=0):
         self.file.close()
-        with open(self.file.path+str(chunk_num), "wb") as file_obj:  # mode = write+binary
-            file_obj.write(chunk.read(-1))  
+        with open(
+            self.file.path + str(chunk_num), "wb"
+        ) as file_obj:  # mode = write+binary
+            file_obj.write(chunk.read(-1))
             # We can use .read() safely because chunk is already in memory
 
         if chunk_size is not None:

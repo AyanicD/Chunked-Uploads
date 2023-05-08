@@ -24,7 +24,7 @@ EXPIRATION_DELTA = getattr(
 
 # Path where uploading files will be stored until completion
 today = timezone.localtime(timezone.now()).date()
-DEFAULT_UPLOAD_PATH = "chunked_uploads" #here
+DEFAULT_UPLOAD_PATH = "chunked_uploads"  # here
 UPLOAD_PATH = getattr(settings, "CHUNKED_UPLOAD_PATH", DEFAULT_UPLOAD_PATH)
 
 

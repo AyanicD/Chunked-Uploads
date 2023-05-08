@@ -208,39 +208,7 @@ class ChunkedUploadView(ChunkedUploadBaseView):
                 attrs["user"] = request.user
             attrs.update(self.get_extra_attrs(request))
             chunked_upload = self.create_chunked_upload(save=False, **attrs)
-
-        content_range = request.META.get(self.content_range_header, "")
-        match = self.content_range_pattern.match(content_range)
-        print(chunk.size)
-        comments = """if offset:
-            start = int(match.group('start'))
-            end = int(match.group('end'))
-            total = int(match.group('total'))
-        elif self.fail_if_no_header:
-            raise ChunkedUploadError(status=http_status.HTTP_400_BAD_REQUEST,
-                                     detail='Error in request headers')
-        else:
-            # Use the whole size when HTTP_CONTENT_RANGE is not provided
-            start = 0
-            end = chunk.size - 1
-            total = chunk.size
-        chunk_size = end - start + 1
-        max_bytes = self.get_max_bytes(request)
-        if max_bytes is not None and total > max_bytes:
-            raise ChunkedUploadError(
-                status=http_status.HTTP_400_BAD_REQUEST,
-                detail='Size of file exceeds the limit (%s bytes)' % max_bytes
-            )
-        print(chunked_upload.offset)
-        print(start)
-        if chunked_upload.offset != start:
-            raise ChunkedUploadError(status=http_status.HTTP_400_BAD_REQUEST,
-                                     detail='Offsets do not match',
-                                     offset=chunked_upload.offset)
-        if chunk.size != chunk_size:
-            raise ChunkedUploadError(status=http_status.HTTP_400_BAD_REQUEST,
-                                     detail="File size doesn't match headers")
-        """
+    
         chunked_upload.append_chunk(chunk, chunk_size=chunk.size, save=False,chunk_num = chunk_num)
 
         self._save(chunked_upload)
@@ -251,33 +219,29 @@ class ChunkedUploadView(ChunkedUploadBaseView):
         )
 
 class ChunkedUploadApiViewSet(viewsets.ModelViewSet):
-    #http_method_names = ['POST','PATCH']
+
     today = timezone.localtime(timezone.now()).date()
     client = storage.Client()
-    #bucket = client.get_bucket("cos-dev-filestore")
+    bucket = client.get_bucket("cos-dev-filestore")
     queryset = MyChunkedUpload.objects.all()
     model = MyChunkedUpload
     serializer_class = ChunkedUploadSerializer
-
-    def get_response_data(self, chunked_upload):
-        """
-        Data for the response. Should return a dictionary-like object.
-        """
-        return {
-            "upload_id": chunked_upload.upload_id,
-            "offset": chunked_upload.offset,
-            "expires": chunked_upload.expires_on,
-        }
+    CHUNK_SIZE = 262144
 
     def md5(self, file):
-        CHUNK_SIZE = 262144
+        """
+        Caculates md5 hash value of a give file
+        """
         md5 = hashlib.md5()
-        for chunk in file.chunks(CHUNK_SIZE):
+        for chunk in file.chunks(self.CHUNK_SIZE):
             md5.update(chunk)
         md5 = md5.hexdigest()
         return md5
 
     def create(self, request, pk=None):
+        """
+        Takes in various chunks and stores them in a file. Also updates the database.
+        """
         filename = request.data["filename"] 
         chunk_num = request.data["chunk_num"]
         chunk = request.data["chunk"]
@@ -288,11 +252,9 @@ class ChunkedUploadApiViewSet(viewsets.ModelViewSet):
             return Response({"message" :"File Corrupt","status" :409})
 
         if self.queryset.filter(file_md5=file_md5).exists():
-            fetch = 1
             resume_upload = self.queryset.get(file_md5=file_md5)
             resume_serializer = ChunkedUploadSerializer(resume_upload)
             upload_id = resume_serializer.data["upload_id"]
-            offset = resume_serializer.data["offset"]
             print(resume_serializer.data)
             cuv = ChunkedUploadView()
             cuv.request = request
@@ -316,20 +278,21 @@ class ChunkedUploadApiViewSet(viewsets.ModelViewSet):
 
     @action(methods=["PATCH"], detail=False)
     def combine_chunks(self, request):
+        """
+        Checks if all chunks are present and Combines them. Also deletes already combined chunks.
+        """
         filename = request.data["filename"] 
         file_md5 = request.data['file_md5'] 
         file_size = int(request.data["size"])
-        CHUNK_SIZE = 262144
-        if file_size%CHUNK_SIZE == 0:
-            ciel = file_size/CHUNK_SIZE
+        if file_size%self.CHUNK_SIZE == 0:
+            ciel = file_size/self.CHUNK_SIZE
         else:
-            ciel = int(file_size/CHUNK_SIZE) + 1
+            ciel = int(file_size/self.CHUNK_SIZE) + 1
         if self.queryset.filter(file_md5=file_md5).exists():
             fetch = 1
             resume_upload = self.queryset.get(file_md5=file_md5)
             resume_serializer = ChunkedUploadSerializer(resume_upload)
             upload_id = resume_serializer.data["upload_id"]
-            offset = resume_serializer.data["offset"]
             print(resume_serializer.data['file'])
             path = f'./chunked_uploads/{upload_id}/{filename}'
             for i in range(2, ciel + 1):
@@ -348,191 +311,15 @@ class ChunkedUploadApiViewSet(viewsets.ModelViewSet):
             return Response({"message" : "wrong md5", "status": "failure"})
         # GCS
         """blob = self.bucket.blob(f"chunked_uploads/{self.today}/{upload_id}/{filename}")
-        file = open(resume_serializer.data['file'],'rb')
-        blob.upload_from_file(file, content_type=file.content_type, rewind=True)
-        print(blob)"""   
-        return Response({"url" : "gg", "status": "success"})
-        create = """file = request.data["file"]
-        filename = request.data["file"].name
-        request.data["filename"] = filename
-        content_type = file.content_type
-        print(type(file))
-        md5 = self.md5(file)
-        fetch = 0
-        offset = 0
-        if self.queryset.filter(file_md5=md5).exists():
-            fetch = 1
-            resume_upload = self.queryset.get(file_md5=md5)
-            resume_serializer = ChunkedUploadSerializer(resume_upload)
-            upload_id = resume_serializer.data["upload_id"]
-            offset = resume_serializer.data["offset"]
-            print(resume_serializer.data)
+        with open(path,'rb') as file:
+            blob.upload_from_file(file,rewind=True)
 
-        CHUNK_SIZE = 262144
-        chunk_number = 1
-        cuv = ChunkedUploadView()
-
-        for chunk in file.chunks(CHUNK_SIZE):
-            print(type(chunk))
-            content = ContentFile(chunk)
-            chunk = InMemoryUploadedFile(
-                content, None, filename, content_type, len(chunk), None
-            )
-            if fetch == 0 and chunk_number == 1:
-                request.data["file_md5"] = md5
-                request.data["file"] = chunk
-                serializer = ChunkedUploadSerializer(data=request.data)
-                serializer.is_valid(raise_exception=True)
-                serializer.save()
-                print(request)
-                upload_id = serializer.data["upload_id"]
-                print(serializer.data["offset"])
-                print(upload_id)
-            if fetch == 1 and chunk_number == 1 and offset != 0:
-                offset -= CHUNK_SIZE
-                continue
-            else:
-                cuv.request = request
-                request.data["upload_id"] = upload_id
-                request.data["file"] = chunk
-                x = cuv._post(request)
-                print(x)
-            chunk_number += 1
-
-        # GCS
-        blob = self.bucket.blob(f"chunked_uploads/{self.today}/{upload_id}/{filename}")
-        blob.upload_from_file(file, content_type=file.content_type, rewind=True)
-        print(blob)
-        
-        chunked_upload = self.queryset.get(upload_id=upload_id)
-        if md5 == chunked_upload.md5:
-            data = {"status": 2, "completed_on": timezone.now()}
-            serializer = ChunkedUploadSerializer(
-                chunked_upload, data=data, partial=True
-            )
+        if self.queryset.filter(file_md5=file_md5).exists():
+            resume_upload = self.queryset.get(file_md5=file_md5)
+            resume_upload.file = blob.public_url
+            serializer = ChunkedUploadSerializer(resume_upload, data=request.data, partial=True)
             if serializer.is_valid():
                 serializer.save()
-        else:
-            error_msg = "Md5 is wrong, byte transfer error"
-            return Response(error_msg, status=400)
-        return Response(serializer.data)"""
-
-    resume = """def resume(self, request):
-        file = request.data['file']
-        upload_id = request.data['upload_id']
-        cuv = MyChunkedUploadView()
-        chunked_upload = self.queryset.get(upload_id=upload_id)
-        serializer = ChunkedUploadSerializer(chunked_upload)
-        offset = serializer.data['offset']
-        CHUNK_SIZE = 262144
-        for chunk in file.chunks(CHUNK_SIZE):
-            if offset != 0:
-                offset -= CHUNK_SIZE
-                continue
-            cuv.request = request
-            request.data['file'] = chunk
-            x = cuv._post(request)
-            print(x)
-
-        chunked_upload = self.queryset.get(upload_id=upload_id)
-        if (self.md5(file) == chunked_upload.md5):
-            data = {"status" : 2,"completed_on" : timezone.now()}
-            serializer = ChunkedUploadSerializer(chunked_upload, data=data, partial=True)
-            if serializer.is_valid():
-                serializer.save()
-        else:
-            error_msg = 'Md5 is wrong, byte transfer error'
-            return Response(error_msg, status=400)
-        return Response(serializer.get_uploaded_file(chunked_upload))"""
-
-    entire_gcs = """
-        file = request.data['file']
-        content_type = file.content_type
-        print(type(file))
-        md5 = self.md5(file)
-        fetch = 0
-        offset = 0
-        if self.queryset.filter(file_md5=md5).exists():
-            fetch = 1
-            resume_upload = self.queryset.get(file_md5=md5)
-            resume_serializer = ChunkedUploadSerializer(resume_upload)
-            upload_id = resume_serializer.data['upload_id']
-            offset = resume_serializer.data['offset']
-            print(resume_serializer.data)
-
-        CHUNK_SIZE = 10485760
-        chunk_number = 1
-        cuv = MyChunkedUploadView()
-        today = timezone.localtime(timezone.now()).date()
-        filename = request.data['filename']
-        for chunk in file.chunks(CHUNK_SIZE):
-            print(type(chunk))
-            content = ContentFile(chunk)
-            chunk = InMemoryUploadedFile(content, None, filename, content_type, len(chunk), None)
-            if fetch == 0 and chunk_number == 1:
-                request.data['file_md5'] = md5
-                request.data['file'] = chunk
-                serializer = ChunkedUploadSerializer(data=request.data)
-                serializer.is_valid(raise_exception=True)
-                serializer.save()
-                print(request)
-                upload_id = serializer.data['upload_id']
-                print(serializer.data['offset'])
-                print(upload_id)
-            if fetch == 1 and chunk_number == 1 and offset != 0:
-                offset -= CHUNK_SIZE
-                continue
-            else:
-                cuv.request = request
-                request.data['chunk_number'] = chunk_number
-                request.data['upload_id'] = upload_id
-                request.data['file'] = chunk
-                x = cuv._post(request)
-                print(x)
-            chunk_number += 1
-        today = cuv.today
-        bucket = cuv.bucket
-        outputfile = f"chunked_uploads/{today}/{upload_id}/{filename}"
-        blobs = []
-        for shard in range(1,chunk_number):
-            sfile = f'chunked_uploads/{today}/{upload_id}/{filename}{shard}'
-            blob = bucket.blob(sfile)
-            if not blob.exists():
-                # this causes a retry in 60s
-                raise ValueError(f'branch {sfile} not present')
-            blobs.append(blob)
-            bucket.blob(outputfile).compose(blobs)
-        for blob in blobs:
-            blob.delete()
-        chunked_upload = self.queryset.get(upload_id=upload_id)
-        if (md5 == chunked_upload.md5):
-            data = {"status" : 2,"completed_on" : timezone.now()}
-            serializer = ChunkedUploadSerializer(chunked_upload, data=data, partial=True)
-            if serializer.is_valid():
-                serializer.save()
-        else:
-            error_msg = 'Md5 is wrong, byte transfer error'
-            return Response(error_msg, status=400)
-        return Response(serializer.data)
-    """
-    combine = """@action(methods=["POST"], detail=False)
-    def combine(self, request):
-        today = timezone.localtime(timezone.now()).date()
-        client = storage.Client()
-        filename = "trees.mp4"
-        upload_id = "5ebceb9203204fcab712be5422fa2e04"
-        bucket = client.get_bucket('cos-dev-filestore')
-        outputfile = f"chunked_uploads/{today}/{upload_id}/{filename}"
-        blobs = []
-        for shard in range(1,7):
-            sfile = f'chunked_uploads/{today}/{upload_id}/{filename}{shard}'
-            blob = bucket.blob(sfile)
-            if not blob.exists():
-                # this causes a retry in 60s
-                raise ValueError(f'branch {sfile} not present')
-            blobs.append(blob)
-            bucket.blob(outputfile).compose(blobs)
-        for blob in blobs:
-            blob.delete()
-
-        return Response("Done")"""
+        os.remove(path)"""
+        return Response({"url" : "blob.public_url", "status": "success"})
+    
