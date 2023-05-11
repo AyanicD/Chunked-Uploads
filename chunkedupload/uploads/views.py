@@ -249,12 +249,14 @@ class ChunkedUploadApiViewSet(viewsets.ModelViewSet):
         chunk_md5 = request.data['chunk_md5']
         #file_size = request.data["size"]
         if(chunk_md5 != self.md5(chunk)):
-            return Response({"message" :"File Corrupt","status" :409})
+            return Response({"chunk_num" : chunk_num,"message" :"File Corrupt","status" : 2})
 
         if self.queryset.filter(file_md5=file_md5).exists():
             resume_upload = self.queryset.get(file_md5=file_md5)
             resume_serializer = ChunkedUploadSerializer(resume_upload)
             upload_id = resume_serializer.data["upload_id"]
+            if resume_serializer.data['status'] == 2:
+                return Response({"chunk_num" : chunk_num,"message" :"File Already Uploaded","status" : 3,"url" :f"{resume_serializer.data['file']}"})
             print(resume_serializer.data)
             cuv = ChunkedUploadView()
             cuv.request = request
@@ -273,7 +275,7 @@ class ChunkedUploadApiViewSet(viewsets.ModelViewSet):
             upload_id = serializer.data["upload_id"]
             print(serializer.data["offset"])
             print(upload_id)    
-        return Response({"chunk_num" : chunk_num, "status": "success"})
+        return Response({"chunk_num" : chunk_num, "message" : "Done","status" : 1})
     
 
     @action(methods=["PATCH"], detail=False)
@@ -285,7 +287,7 @@ class ChunkedUploadApiViewSet(viewsets.ModelViewSet):
         file_md5 = request.data['file_md5'] 
         file_size = int(request.data["size"])
         if file_size%self.CHUNK_SIZE == 0:
-            ciel = file_size/self.CHUNK_SIZE
+            ciel = int(file_size/self.CHUNK_SIZE)
         else:
             ciel = int(file_size/self.CHUNK_SIZE) + 1
         if self.queryset.filter(file_md5=file_md5).exists():
@@ -293,11 +295,13 @@ class ChunkedUploadApiViewSet(viewsets.ModelViewSet):
             resume_upload = self.queryset.get(file_md5=file_md5)
             resume_serializer = ChunkedUploadSerializer(resume_upload)
             upload_id = resume_serializer.data["upload_id"]
+            #if resume_serializer.data['status'] == 2:
+                #return Response({"url" : f"{resume_serializer.data['file']}", "message" : "Done" , "status": 1})
             print(resume_serializer.data['file'])
             path = f'./chunked_uploads/{upload_id}/{filename}'
             for i in range(2, ciel + 1):
                 if os.path.isfile(path+str(i)) == False:
-                    return Response({"message" : f"Chunk Number : {i} not arrived", "status": "failure"})
+                    return Response({"chunk_num": {i},"message" : f"Chunk Number : {i} not arrived", "status": "failure"})
 
             with open(path, "ab") as file_obj:  # mode = append+binary
                 for i in range(2,ciel + 1):
@@ -308,18 +312,23 @@ class ChunkedUploadApiViewSet(viewsets.ModelViewSet):
                     os.remove(path+str(i))
                 
         else:
-            return Response({"message" : "wrong md5", "status": "failure"})
+            return Response({"message" : "wrong md5", "status": 2})
         # GCS
-        """blob = self.bucket.blob(f"chunked_uploads/{self.today}/{upload_id}/{filename}")
-        with open(path,'rb') as file:
-            blob.upload_from_file(file,rewind=True)
+        try:
+            blob = self.bucket.blob(f"chunked_uploads/{self.today}/{upload_id}/{filename}")
+            with open(path,'rb') as file:
+                blob.upload_from_file(file,rewind=True)
 
-        if self.queryset.filter(file_md5=file_md5).exists():
-            resume_upload = self.queryset.get(file_md5=file_md5)
-            resume_upload.file = blob.public_url
-            serializer = ChunkedUploadSerializer(resume_upload, data=request.data, partial=True)
-            if serializer.is_valid():
-                serializer.save()
-        os.remove(path)"""
-        return Response({"url" : "blob.public_url", "status": "success"})
+            if self.queryset.filter(file_md5=file_md5).exists():
+                resume_upload = self.queryset.get(file_md5=file_md5)
+                resume_upload.file = blob.public_url
+                resume_upload.completed_on = timezone.datetime.now()
+                resume_upload.status = 2
+                serializer = ChunkedUploadSerializer(resume_upload, data=request.data, partial=True)
+                if serializer.is_valid():
+                    serializer.save()
+            os.remove(path)
+        except:
+            return()
+        return Response({"url" : f"{blob.public_url}", "message" : "Done", "status": 1})
     
