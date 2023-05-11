@@ -4,6 +4,7 @@ from django.views.generic import View
 from django.shortcuts import get_object_or_404
 from django.core.files.base import ContentFile
 from django.utils import timezone
+import datetime
 
 from .settings import MAX_BYTES
 from .models import ChunkedUpload, MyChunkedUpload
@@ -318,10 +319,16 @@ class ChunkedUploadApiViewSet(viewsets.ModelViewSet):
             blob = self.bucket.blob(f"chunked_uploads/{self.today}/{upload_id}/{filename}")
             with open(path,'rb') as file:
                 blob.upload_from_file(file,rewind=True)
-
+            url = blob.generate_signed_url(
+                    version="v2",
+                    # This URL is valid for 365 days
+                    expiration=datetime.timedelta(days=365),
+                    # Allow GET requests using this URL.
+                    method="GET",
+                )
             if self.queryset.filter(file_md5=file_md5).exists():
                 resume_upload = self.queryset.get(file_md5=file_md5)
-                resume_upload.file = blob.public_url
+                resume_upload.file = url
                 resume_upload.completed_on = timezone.datetime.now()
                 resume_upload.status = 2
                 serializer = ChunkedUploadSerializer(resume_upload, data=request.data, partial=True)
@@ -329,6 +336,6 @@ class ChunkedUploadApiViewSet(viewsets.ModelViewSet):
                     serializer.save()
             os.remove(path)
         except:
-            return()
-        return Response({"url" : f"{blob.public_url}", "message" : "Done", "status": 1})
+            return Response({"status" : 3, "message" : "Error on upload"})
+        return Response({"url" : f"{url}", "message" : "Done", "status": 1})
     
