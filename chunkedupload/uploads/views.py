@@ -53,11 +53,6 @@ class ChunkedUploadBaseView(View):
             queryset = queryset.filter(**{self.user_field_name: request.user})
         return queryset
 
-    def validate(self, request):
-        """
-        Placeholder method to define extra validation.
-        Must raise ChunkedUploadError if validation fails.
-        """
 
     def get_response_data(self, chunked_upload, request):
         """
@@ -66,13 +61,6 @@ class ChunkedUploadBaseView(View):
         """
         return {}
 
-    def pre_save(self, chunked_upload, request, new=False):
-        """
-        Placeholder method for calling before saving an object.
-        May be used to set attributes on the object that are implicit
-        in either the request, or the url.
-        """
-
     def save(self, chunked_upload, request, new=False):
         """
         Method that calls save(). Overriding may be useful is save() needs
@@ -80,19 +68,12 @@ class ChunkedUploadBaseView(View):
         """
         chunked_upload.save()
 
-    def post_save(self, chunked_upload, request, new=False):
-        """
-        Placeholder method for calling after saving an object.
-        """
-
     def _save(self, chunked_upload):
         """
         Wraps save() method.
         """
         new = chunked_upload.id is None
-        self.pre_save(chunked_upload, self.request, new=new)
         self.save(chunked_upload, self.request, new=new)
-        self.post_save(chunked_upload, self.request, new=new)
 
     def check_permissions(self, request):
         """
@@ -142,16 +123,6 @@ class ChunkedUploadView(ChunkedUploadBaseView):
         """
         return {}
 
-    def get_max_bytes(self, request):
-        """
-        Used to limit the max amount of data that can be uploaded. `None` means
-        no limit.
-        You can override this to have a custom `max_bytes`, e.g. based on
-        logged user.
-        """
-
-        return self.max_bytes
-
     def create_chunked_upload(self, save=False, **attrs):
         """
         Creates new chunked upload instance. Called if no 'upload_id' is
@@ -194,7 +165,6 @@ class ChunkedUploadView(ChunkedUploadBaseView):
                 status=http_status.HTTP_400_BAD_REQUEST,
                 detail="No chunk file was submitted",
             )
-        self.validate(request)
 
         upload_id = request.data["upload_id"]
         chunk_num = request.data['chunk_num']
