@@ -16,6 +16,12 @@ except ImportError:
     except ImportError:
         raise ImportError("Dude! what version of Django are you using?")
 
+def read_env(key, default=None):
+    try:
+        return os.environ[key]
+    except KeyError:
+        return default
+    
 # How long after creation the upload will expire
 DEFAULT_EXPIRATION_DELTA = timedelta(days=1)
 EXPIRATION_DELTA = getattr(
@@ -65,3 +71,6 @@ DEFAULT_MODEL_USER_FIELD_NULL = getattr(
 DEFAULT_MODEL_USER_FIELD_BLANK = getattr(
     settings, "CHUNKED_UPLOAD_MODEL_USER_FIELD_BLANK", True
 )
+
+GS_BUCKET_NAME = read_env('GOOGLE_CLOUD_BUCKET_NAME', 'cos-dev-filestore')
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = read_env('GOOGLE_APPLICATION_CREDENTIALS', "C:\\raven-356806-4358641d2512.json")

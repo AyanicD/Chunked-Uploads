@@ -130,6 +130,5 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 #DEFAULT_FILE_STORAGE = 'storages.backends.gcloud.GoogleCloudStorage'
-#GS_BUCKET_NAME = read_env('GOOGLE_CLOUD_BUCKET_NAME', 'cos-dev-filestore')
+GS_BUCKET_NAME = read_env('GOOGLE_CLOUD_BUCKET_NAME', 'cos-dev-filestore')
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"]= read_env('GOOGLE_APPLICATION_CREDENTIALS', "C:\\raven-356806-4358641d2512.json")
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"]="C:\\raven-356806-4358641d2512.json"

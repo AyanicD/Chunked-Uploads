@@ -6,7 +6,8 @@ from django.core.files.base import ContentFile
 from django.utils import timezone
 import datetime
 
-from .settings import MAX_BYTES
+
+from .settings import MAX_BYTES,GS_BUCKET_NAME
 from .models import ChunkedUpload, MyChunkedUpload
 from .response import Response
 from .constants import http_status, COMPLETE
@@ -193,7 +194,7 @@ class ChunkedUploadApiViewSet(viewsets.ModelViewSet):
 
     today = timezone.localtime(timezone.now()).date()
     client = storage.Client()
-    bucket = client.get_bucket("cos-dev-filestore")
+    bucket = client.get_bucket(GS_BUCKET_NAME)
     queryset = MyChunkedUpload.objects.all()
     model = MyChunkedUpload
     serializer_class = ChunkedUploadSerializer
@@ -218,6 +219,8 @@ class ChunkedUploadApiViewSet(viewsets.ModelViewSet):
         chunk = request.data["chunk"]
         file_md5 = request.data['file_md5'] 
         chunk_md5 = request.data['chunk_md5']
+        self.CHUNK_SIZE = request.data.get('chunk_size', self.CHUNK_SIZE)
+
         #file_size = request.data["size"]
         if(chunk_md5 != self.md5(chunk)):
             return Response({"chunk_num" : chunk_num,"message" :"File Corrupt","status" : 2})
