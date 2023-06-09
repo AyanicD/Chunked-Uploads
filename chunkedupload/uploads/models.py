@@ -5,7 +5,6 @@ from django.db import models
 from django.conf import settings
 from django.core.files.uploadedfile import UploadedFile
 from django.utils import timezone
-from google.cloud import storage
 
 from .settings import (
     EXPIRATION_DELTA,
@@ -65,13 +64,6 @@ class AbstractChunkedUpload(models.Model):
                 md5.update(chunk)
             self._md5 = md5.hexdigest()
         return self._md5
-
-    def delete(self, delete_file=True, *args, **kwargs):
-        if self.file:
-            storage, path = self.file.storage, self.file.path
-        super(AbstractChunkedUpload, self).delete(*args, **kwargs)
-        if self.file and delete_file:
-            storage.delete(path)
 
     def __str__(self):
         return "<%s - upload_id: %s - bytes: %s - status: %s>" % (
